@@ -1,11 +1,7 @@
-========
-Octogit
-========
+opencv docs in vimdoc format
+=============================
 
-This repository has been created with Octogit.
+This is a hack and mainly for my own use.
+If you know a better way of doing this let me know.
 
-.. image:: http://myusuf3.github.com/octogit/assets/img/readme_image.png
-
-Author
-======
-Mahdi Yusuf (@myusuf3)
+dimatura@cmu.edu

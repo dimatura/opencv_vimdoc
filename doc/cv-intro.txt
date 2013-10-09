@@ -1,0 +1,861 @@
+*cv-intro.txt*	For Vim 0.0	Thu May 19 18:07:34 2011
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+
+===========================================================================
+*cv-Introduction*
+
+Starting from OpenCV 2.0 the new modern C++ interface has been introduced. It
+is crisp (less typing is needed to code the same thing), type-safe (no more
+CvArr* a.k.a. void* ) and, in general, more convenient to use. Here is a short
+example of what it looks like:
+
+//
+// Simple retro-style photo effect done by adding noise to
+// the luminance channel and reducing intensity of the chroma channels
+//
+
+// include standard OpenCV headers, same as before
+#include "cv.h"
+#include "highgui.h"
+
+// all the new API is put into "cv" namespace. Export its content
+using namespace cv;
+
+// enable/disable use of mixed API in the code below.
+#define DEMO_MIXED_API_USE 1
+
+int main( int argc, char** argv )
+{
+    const char* imagename = argc > 1 ? argv[1] : "lena.jpg";
+#if DEMO_MIXED_API_USE
+    // Ptr<T> is safe ref-conting pointer class
+    Ptr<IplImage> iplimg = cvLoadImage(imagename);
+
+    // cv::Mat replaces the CvMat and IplImage, but it's easy to convert
+    // between the old and the new data structures
+    // (by default, only the header is converted and the data is shared)
+    Mat img(iplimg);
+#else
+    // the newer cvLoadImage alternative with MATLAB-style name
+    Mat img = imread(imagename);
+#endif
+
+    if( !img.data ) // check if the image has been loaded properly
+        return -1;
+
+    Mat img_yuv;
+    // convert image to YUV color space.
+    // The output image will be allocated automatically
+    cvtColor(img, img_yuv, CV_BGR2YCrCb);
+
+    // split the image into separate color planes
+    vector<Mat> planes;
+    split(img_yuv, planes);
+
+    // another Mat constructor; allocates a matrix of the specified
+        // size and type
+    Mat noise(img.size(), CV_8U);
+
+    // fills the matrix with normally distributed random values;
+    // there is also randu() for uniformly distributed random numbers.
+    // Scalar replaces CvScalar, Scalar::all() replaces cvScalarAll().
+    randn(noise, Scalar::all(128), Scalar::all(20));
+
+    // blur the noise a bit, kernel size is 3x3 and both sigma's
+        // are set to 0.5
+    GaussianBlur(noise, noise, Size(3, 3), 0.5, 0.5);
+
+    const double brightness_gain = 0;
+    const double contrast_gain = 1.7;
+#if DEMO_MIXED_API_USE
+    // it's easy to pass the new matrices to the functions that
+    // only work with IplImage or CvMat:
+    // step 1) - convert the headers, data will not be copied
+    IplImage cv_planes_0 = planes[0], cv_noise = noise;
+    // step 2) call the function; do not forget unary "&" to form pointers
+    cvAddWeighted(&cv_planes_0, contrast_gain, &cv_noise, 1,
+                 -128 + brightness_gain, &cv_planes_0);
+#else
+    addWeighted(planes[0], constrast_gain, noise, 1,
+                -128 + brightness_gain, planes[0]);
+#endif
+    const double color_scale = 0.5;
+    // Mat::convertTo() replaces cvConvertScale.
+    // One must explicitly specify the output matrix type
+    // (we keep it intact, i.e. pass planes[1].type())
+    planes[1].convertTo(planes[1], planes[1].type(),
+                        color_scale, 128*(1-color_scale));
+
+    // alternative form of convertTo if we know the datatype
+    // at compile time ("uchar" here).
+    // This expression will not create any temporary arrays
+    // and should be almost as fast as the above variant
+    planes[2] = Mat_<uchar>(planes[2]*color_scale + 128*(1-color_scale));
+
+    // Mat::mul replaces cvMul(). Again, no temporary arrays are
+    // created in the case of simple expressions.
+    planes[0] = planes[0].mul(planes[0], 1./255);
+
+    // now merge the results back
+    merge(planes, img_yuv);
+    // and produce the output RGB image
+    cvtColor(img_yuv, img, CV_YCrCb2BGR);
+
+    // this is counterpart for cvNamedWindow
+    namedWindow("image with grain", CV_WINDOW_AUTOSIZE);
+#if DEMO_MIXED_API_USE
+    // this is to demonstrate that img and iplimg really share the data -
+    // the result of the above processing is stored to img and thus
+        // in iplimg too.
+    cvShowImage("image with grain", iplimg);
+#else
+    imshow("image with grain", img);
+#endif
+    waitKey();
+
+    return 0;
+    // all the memory will automatically be released
+    // by vector<>, Mat and Ptr<> destructors.
+}
+
+Following a summary “cheatsheet” below, the rest of the introduction will
+discuss the key features of the new interface in more detail.
+
+  • C++ Cheatsheet
+  • Namespace cv and Function Naming
+  • Memory Management
+  • Memory Management Part II. Automatic Data Allocation
+  • Algebraic Operations
+  • Fast Element Access
+  • Saturation Arithmetics
+  • Error handling
+  • Threading and Reenterability
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+OpenCV 2.1 C++ Reference
+
+Next topic
+
+C++ Cheatsheet
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+C++ Cheatsheet~
+
+The section is just a summary “cheatsheet” of common things you may want to do
+    with cv::Mat:. The code snippets below all assume the correct
+    namespace is used:
+
+using namespace cv;
+using namespace std;
+
+Convert an IplImage or CvMat to an cv::Mat and a cv::Mat to an IplImage or
+CvMat:
+
+// Assuming somewhere IplImage *iplimg; exists
+// and has been allocated and cv::Mat Mimg has been defined
+Mat imgMat(iplimg);  //Construct an Mat image "img" out of an IplImage
+Mimg = iplimg;       //Or just set the header of pre existing cv::Mat
+                     //Ming to iplimg's data (no copying is done)
+
+//Convert to IplImage or CvMat, no data copying
+IplImage ipl_img = img;
+CvMat cvmat = img; // convert cv::Mat -> CvMat
+
+A very simple way to operate on a rectanglular sub-region of an image (ROI –
+“Region of Interest”):
+
+//Make a rectangle
+Rect roi(10, 20, 100, 50);
+//Point a cv::Mat header at it (no allocation is done)
+Mat image_roi = image(roi);
+
+A bit advanced, but should you want efficiently to sample from a circular
+region in an image (below, instead of sampling, we just draw into a BGR image)
+:
+
+// the function returns x boundary coordinates of
+// the circle for each y. RxV[y1] = x1 means that
+// when y=y1, -x1 <=x<=x1 is inside the circle
+void getCircularROI(int R, vector < int > & RxV)
+{
+    RxV.resize(R+1);
+    for( int y = 0; y <= R; y++ )
+        RxV[y] = cvRound(sqrt((double)R*R - y*y));
+}
+
+// This draws a circle in the green channel
+// (note the "[1]" for a BGR" image,
+// blue and red channels are not modified),
+// but is really an example of how to *sample* from a circular region.
+void drawCircle(Mat &image, int R, Point center)
+{
+    vector<int> RxV;
+    getCircularROI(R, RxV);
+
+    Mat_<Vec3b>& img = (Mat_<Vec3b>&)image; //3 channel pointer to image
+    for( int dy = -R; dy <= R; dy++ )
+    {
+        int Rx = RxV[abs(dy)];
+        for( int dx = -Rx; dx <= Rx; dx++ )
+            img(center.y+dy, center.x+dx)[1] = 255;
+    }
+}
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Introduction
+
+Next topic
+
+Namespace cv and Function Naming
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Memory Management~
+
+When using the new interface, the most of memory deallocation and even memory
+allocation operations are done automatically when needed.
+
+First of all, Mat , SparseMat and other classes have destructors that
+deallocate memory buffers occupied by the structures when needed.
+
+Secondly, this “when needed” means that the destructors do not always
+deallocate the buffers, they take into account possible data sharing. That is,
+in a destructor the reference counter associated with the underlying data is
+decremented and the data is deallocated if and only if the reference counter
+becomes zero, that is, when no other structures refer to the same buffer. When
+such a structure containing a reference counter is copied, usually just the
+header is duplicated, while the underlying data is not; instead, the reference
+counter is incremented to memorize that there is another owner of the same
+data. Also, some structures, such as Mat , can refer to the user-allocated
+data. In this case the reference counter is NULL pointer and then no reference
+counting is done - the data is not deallocated by the destructors and should be
+deallocated manually by the user. We saw this scheme in the first example in
+the chapter:
+
+// allocates IplImages and wraps it into shared pointer class.
+Ptr<IplImage> iplimg = cvLoadImage(...);
+
+// constructs Mat header for IplImage data;
+// does not copy the data;
+// the reference counter will be NULL
+Mat img(iplimg);
+...
+// in the end of the block img destructor is called,
+// which does not try to deallocate the data because
+// of NULL pointer to the reference counter.
+//
+// Then Ptr<IplImage> destructor is called that decrements
+// the reference counter and, as the counter becomes 0 in this case,
+// the destructor calls cvReleaseImage().
+
+The copying semantics was mentioned in the above paragraph, but deserves a
+dedicated discussion. By default, the new OpenCV structures implement shallow,
+so called O(1) (i.e. constant-time) assignment operations. It gives user
+possibility to pass quite big data structures to functions (though, e.g.
+passing const Mat& is still faster than passing Mat ), return them (e.g. see
+the example with findHomography above), store them in OpenCV and STL containers
+etc. - and do all of this very efficiently. On the other hand, most of the new
+data structures provide clone() method that creates a full copy of an object.
+Here is the sample:
+
+// create a big 8Mb matrix
+Mat A(1000, 1000, CV_64F);
+
+// create another header for the same matrix;
+// this is instant operation, regardless of the matrix size.
+Mat B = A;
+// create another header for the 3-rd row of A; no data is copied either
+Mat C = B.row(3);
+// now create a separate copy of the matrix
+Mat D = B.clone();
+// copy the 5-th row of B to C, that is, copy the 5-th row of A
+// to the 3-rd row of A.
+B.row(5).copyTo(C);
+// now let A and D share the data; after that the modified version
+// of A is still referenced by B and C.
+A = D;
+// now make B an empty matrix (which references no memory buffers),
+// but the modified version of A will still be referenced by C,
+// despite that C is just a single row of the original A
+B.release();
+
+// finally, make a full copy of C. In result, the big modified
+// matrix will be deallocated, since it's not referenced by anyone
+C = C.clone();
+
+Memory management of the new data structures is automatic and thus easy. If,
+however, your code uses IplImage , CvMat or other C data structures a lot,
+memory management can still be automated without immediate migration to Mat by
+using the already mentioned template class Ptr , similar to shared_ptr from
+Boost and C++ TR1. It wraps a pointer to an arbitrary object, provides
+transparent access to all the object fields and associates a reference counter
+with it. Instance of the class can be passed to any function that expects the
+original pointer. For correct deallocation of the object, you should specialize
+Ptr<T>::delete_obj() method. Such specialized methods already exist for the
+classical OpenCV structures, e.g.:
+
+// cxoperations.hpp:
+...
+template<> inline Ptr<IplImage>::delete_obj() {
+    cvReleaseImage(&obj);
+}
+...
+
+See Ptr description for more details and other usage scenarios.
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Namespace cv and Function Naming
+
+Next topic
+
+Memory Management Part II. Automatic Data Allocation
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Memory Management Part II. Automatic Data Allocation~
+
+With the new interface not only explicit memory deallocation is not needed
+anymore, but the memory allocation is often done automatically too. That was
+demonstrated in the example in the beginning of the chapter when cvtColor was
+called, and here are some more details.
+
+Mat and other array classes provide method create that allocates a new buffer
+for array data if and only if the currently allocated array is not of the
+required size and type. If a new buffer is needed, the previously allocated
+buffer is released (by engaging all the reference counting mechanism described
+in the previous section). Now, since it is very quick to check whether the
+needed memory buffer is already allocated, most new OpenCV functions that have
+arrays as output parameters call the create method and this way the automatic
+data allocation concept is implemented. Here is the example:
+
+#include "cv.h"
+#include "highgui.h"
+
+using namespace cv;
+
+int main(int, char**)
+{
+    VideoCapture cap(0);
+    if(!cap.isOpened()) return -1;
+
+    Mat edges;
+    namedWindow("edges",1);
+    for(;;)
+    {
+        Mat frame;
+        cap >> frame;
+        cvtColor(frame, edges, CV_BGR2GRAY);
+        GaussianBlur(edges, edges, Size(7,7), 1.5, 1.5);
+        Canny(edges, edges, 0, 30, 3);
+        imshow("edges", edges);
+        if(waitKey(30) >= 0) break;
+    }
+    return 0;
+}
+
+The matrix edges is allocated during the first frame processing and unless the
+resolution will suddenly change, the same buffer will be reused for every next
+frame’s edge map.
+
+In many cases the output array type and size can be inferenced from the input
+arrays’ respective characteristics, but not always. In these rare cases the
+corresponding functions take separate input parameters that specify the data
+type and/or size of the output arrays, like resize . Anyway, a vast majority of
+the new-style array processing functions call create for each of the output
+array, with just a few exceptions like mixChannels , RNG::fill and some others.
+
+Note that this output array allocation semantic is only implemented in the new
+functions. If you want to pass the new structures to some old OpenCV function,
+you should first allocate the output arrays using create method, then make
+CvMat or IplImage headers and after that call the function.
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Memory Management
+
+Next topic
+
+Algebraic Operations
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Algebraic Operations~
+
+Just like in v1.x, OpenCV 2.x provides some basic functions operating on
+matrices, like add , subtract , gemm etc. In addition, it introduces overloaded
+operators that give the user a convenient algebraic notation, which is nearly
+as fast as using the functions directly. For example, here is how the least
+squares problem Ax=b can be solved using normal equations:
+
+Mat x = (A.t()*A).inv()*(A.t()*b);
+
+The complete list of overloaded operators can be found in Matrix Expressions .
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Memory Management Part II. Automatic Data Allocation
+
+Next topic
+
+Fast Element Access
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Fast Element Access~
+
+Historically, OpenCV provided many different ways to access image and matrix
+elements, and none of them was both fast and convenient. With the new data
+structures, OpenCV 2.x introduces a few more alternatives, hopefully more
+convenient than before. For detailed description of the operations, please,
+check Mat and description. Here is part of the retro-photo-styling example
+rewritten (in simplified form) using the element access operations:
+
+...
+// split the image into separate color planes
+vector<Mat> planes;
+split(img_yuv, planes);
+
+// method 1. process Y plane using an iterator
+MatIterator_<uchar> it = planes[0].begin<uchar>(),
+                    it_end = planes[0].end<uchar>();
+for(; it != it_end; ++it)
+{
+    double v = *it*1.7 + rand()
+    *it = saturate_cast<uchar>(v*v/255.);
+}
+
+// method 2. process the first chroma plane using pre-stored row pointer.
+// method 3. process the second chroma plane using
+//           individual element access operations
+for( int y = 0; y < img_yuv.rows; y++ )
+{
+    uchar* Uptr = planes[1].ptr<uchar>(y);
+    for( int x = 0; x < img_yuv.cols; x++ )
+    {
+        Uptr[x] = saturate_cast<uchar>((Uptr[x]-128)/2 + 128);
+        uchar& Vxy = planes[2].at<uchar>(y, x);
+        Vxy = saturate_cast<uchar>((Vxy-128)/2 + 128);
+    }
+}
+
+merge(planes, img_yuv);
+...
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Algebraic Operations
+
+Next topic
+
+Saturation Arithmetics
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Saturation Arithmetics~
+
+In the above sample you may have noticed operator, and that’s how all the pixel
+processing is done in OpenCV. When a result of image operation is 8-bit image
+with pixel values ranging from 0 to 255, each output pixel value is clipped to
+this available range:
+
+I(x,y)= \min ( \max (value, 0), 255)
+
+and the similar rules are applied to 8-bit signed and 16-bit signed and
+unsigned types. This “saturation” semantics (different from usual C language
+“wrapping” semantics, where lowest bits are taken, is implemented in every
+image processing function, from the simple cv::add to cv::cvtColor , cv::resize
+, cv::filter2D etc. It is not a new feature of OpenCV v2.x, it was there from
+very beginning. In the new version this special template operator is introduced
+to simplify implementation of this semantic in your own functions.
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Fast Element Access
+
+Next topic
+
+Error handling
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Error handling~
+
+The modern error handling mechanism in OpenCV uses exceptions, as opposite to
+the manual stack unrolling used in previous versions.
+
+If you to check some conditions in your code and raise an error if they are not
+satisfied, use () or ().
+
+CV_Assert(mymat.type() == CV_32FC1);
+...
+
+if( scaleValue < 0 || scaleValue > 1000 )
+   CV_Error(CV_StsOutOfRange, "The scale value is out of range");
+
+There is also that yields no code in the Release configuration.
+
+To handle the errors, use the standard exception handling mechanism:
+
+try
+{
+    ...
+}
+catch( cv::Exception& e )
+{
+    const char* err_msg = e.what();
+    ...
+}
+
+instead of you can write std::exception , since the former is derived from the
+latter.
+
+Then, obviously, to make it all work and do not worry about the object
+destruction, try not to use IplImage* , CvMat* and plain pointers in general.
+Use , std::vector<> , etc.
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Saturation Arithmetics
+
+Next topic
+
+Threading and Reenterability
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+Threading and Reenterability~
+
+OpenCV uses OpenMP to run some time-consuming operations in parallel. Threading
+can be explicitly controlled by setNumThreads function. Also, functions and
+“const” methods of the classes are generally re-enterable, that is, they can be
+called from different threads asynchronously.
+
+Help and Feedback
+
+You did not find what you were looking for?
+
+  • Try the Cheatsheet.
+  • Ask a question in the user group/mailing list.
+  • If you think something is missing or wrong in the documentation, please
+    file a bug report.
+
+Logo
+
+Previous topic
+
+Error handling
+
+Next topic
+
+core. The Core Functionality
+
+This Page
+
+  • Show Source
+
+Quick search
+
+[                  ] [Go] 
+Enter search terms or a module, class or function name.
+
+Navigation
+
+  • index
+  • next |
+  • previous |
+  • opencv v2.1 documentation »
+  • Introduction »
+
+© Copyright 2010, authors. Created using Sphinx 0.6.2.
+
+
+vim:tw=78:ts=4:ft=help:norl:
